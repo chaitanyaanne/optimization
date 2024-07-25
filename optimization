@@ -1,0 +1,157 @@
+import pandas as pd
+import numpy as np
+from scipy.optimize import linprog
+
+# Function to load data from a CSV file
+def load_data(csv_file):
+    data = pd.read_csv(csv_file)
+    accounts = data[['account_id', 'churn_score', 'health_score', 'propensity_score', 'revenue']]
+    existing_assignments = data.set_index('account_id')['assigned_csm'].to_dict()
+    return accounts, existing_assignments
+
+# Normalize the scores for balancing
+def normalize_scores(accounts):
+    for column in ['churn_score', 'health_score', 'propensity_score', 'revenue']:
+        accounts[column] = (accounts[column] - accounts[column].mean()) / accounts[column].std()
+    return accounts
+
+# Function to add a new CSM
+def add_csm(csms, new_csm, constraints):
+    csms.append(new_csm)
+    constraints[new_csm] = {'max_accounts': 30, 'only_big_accounts': False}
+    return csms, constraints
+
+# Function to add a new account
+def add_account(accounts, new_account):
+    accounts = accounts.append(new_account, ignore_index=True)
+    return accounts
+
+# Function to rebalance assignments
+def rebalance_assignments(accounts, csms, constraints, existing_assignments, max_reassignments=3):
+    c = []
+    handover_penalty = 10  # Penalty for changing assignments
+    for account_id in accounts['account_id']:
+        for csm in csms:
+            if account_id in existing_assignments and existing_assignments[account_id] == csm:
+                c.append(1)  # No penalty if the assignment is unchanged
+            else:
+                c.append(1 + handover_penalty)  # Add penalty for handovers
+    c = np.array(c)
+
+    # Constraints
+    A_eq = np.zeros((len(accounts), len(csms) * len(accounts)))
+    for i in range(len(accounts)):
+        A_eq[i, i::len(accounts)] = 1
+    b_eq = np.ones(len(accounts))
+
+    A_ub = []
+    b_ub = []
+
+    for j, csm in enumerate(csms):
+        max_accounts = constraints[csm]['max_accounts']
+        constraint = np.zeros(len(c))
+        constraint[j * len(accounts):(j + 1) * len(accounts)] = 1
+        A_ub.append(constraint)
+        b_ub.append(max_accounts)
+
+        if constraints[csm]['only_big_accounts']:
+            for i, account in accounts.iterrows():
+                if account['revenue'] < 2000:  # Assuming 2000 is the threshold for big accounts
+                    constraint = np.zeros(len(c))
+                    constraint[i + j * len(accounts)] = 1
+                    A_ub.append(constraint)
+                    b_ub.append(0)  # Cannot be assigned
+
+    A_ub = np.array(A_ub)
+    b_ub = np.array(b_ub)
+
+    # Add constraints to limit reassignments
+    reassignment_constraints = []
+    for csm in csms:
+        reassignments = 0
+        for account_id, current_csm in existing_assignments.items():
+            if current_csm == csm:
+                reassignments += 1
+                if reassignments > max_reassignments:
+                    account_index = accounts[accounts['account_id'] == account_id].index[0]
+                    csm_index = csms.index(csm)
+                    for j in range(len(csms)):
+                        if j != csm_index:
+                            constraint = np.zeros(len(c))
+                            constraint[account_index + j * len(accounts)] = 1
+                            reassignment_constraints.append((constraint, 0))
+
+    for constraint, bound in reassignment_constraints:
+        A_ub = np.vstack([A_ub, constraint])
+        b_ub = np.append(b_ub, bound)
+
+    for account_id, csm in existing_assignments.items():
+        account_index = accounts[accounts['account_id'] == account_id].index[0]
+        csm_index = csms.index(csm)
+        for j in range(len(csms)):
+            if j == csm_index:
+                A_eq = np.vstack([A_eq, np.zeros(len(c))])
+                A_eq[-1, account_index + j * len(accounts)] = 1
+                b_eq = np.append(b_eq, 1)
+
+    bounds = [(0, 1)] * len(c)
+
+    result = linprog(c, A_eq=A_eq, b_eq=b_eq, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
+    assignments = result.x.reshape((len(accounts), len(csms)))
+    assignments = (assignments > 0.5).astype(int)
+
+    account_assignments = existing_assignments.copy()
+    for i, account in accounts.iterrows():
+        if account['account_id'] not in existing_assignments:
+            csm_index = np.argmax(assignments[i])
+            csm = csms[csm_index]
+            account_assignments[account['account_id']] = csm
+
+    return account_assignments
+
+# Function to handle various scenarios
+def rebalance_scenarios(accounts, csms, constraints, existing_assignments, new_csm=None, new_account=None, remove_csm=None, remove_account=None):
+    if new_csm:
+        csms, constraints = add_csm(csms, new_csm, constraints)
+    if new_account is not None:
+        accounts = add_account(accounts, new_account)
+    if remove_csm:
+        csms.remove(remove_csm)
+        constraints.pop(remove_csm, None)
+    if remove_account:
+        accounts = accounts[accounts['account_id'] != remove_account]
+
+    return rebalance_assignments(accounts, csms, constraints, existing_assignments)
+
+# Load data from CSV
+csv_file = 'existing_assignments.csv'
+accounts, existing_assignments = load_data(csv_file)
+accounts = normalize_scores(accounts)
+initial_csms = list(set(existing_assignments.values()))
+csm_constraints = {csm: {'max_accounts': 30, 'only_big_accounts': False} for csm in initial_csms}
+
+# Example usage
+# Adding a new CSM and rebalancing
+new_csm = 'CSM6'
+new_account = {'account_id': 21, 'churn_score': 0.6, 'health_score': 0.4, 'propensity_score': 0.7, 'revenue': 3500}
+
+new_assignments = rebalance_scenarios(accounts, initial_csms, csm_constraints, existing_assignments, new_csm=new_csm)
+print(new_assignments)
+
+# Adding a new account and rebalancing
+new_assignments = rebalance_scenarios(accounts, initial_csms, csm_constraints, existing_assignments, new_account=new_account)
+print(new_assignments)
+
+# Removing a CSM and rebalancing
+remove_csm = 'CSM2'
+new_assignments = rebalance_scenarios(accounts, initial_csms, csm_constraints, existing_assignments, remove_csm=remove_csm)
+print(new_assignments)
+
+# Removing an account and rebalancing
+remove_account = 2
+new_assignments = rebalance_scenarios(accounts, initial_csms, csm_constraints, existing_assignments, remove_account=remove_account)
+print(new_assignments)
+
+# Adding both a new CSM and a new account and rebalancing
+new_assignments = rebalance_scenarios(accounts, initial_csms, csm_constraints, existing_assignments, new_csm=new_csm, new_account=new_account)
+print(new_assignments)

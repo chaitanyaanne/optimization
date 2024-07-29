@@ -1,0 +1,9 @@
+# Additional constraint: Minimum total score for each CSM
+min_total_score = total_scores.sum() / (num_csms * 1.2)  # Adjust the factor to increase complexity
+for j in range(num_csms):
+    prob += total_csm_scores[j] >= min_total_score
+
+# Additional constraint: Maximum total score for each CSM
+max_total_score = total_scores.sum() / (num_csms * 0.8)  # Adjust the factor to increase complexity
+for j in range(num_csms):
+    prob += total_csm_scores[j] <= max_total_score

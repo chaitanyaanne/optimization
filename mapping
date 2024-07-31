@@ -1,0 +1,201 @@
+import pulp
+import pandas as pd
+
+def initialize_problem(df, num_csms, new_csms, csm_mapping, max_accounts_per_csm=30, fixed_assignments={}, restricted_assignments={}, parent_child_accounts={}, csm_groups={}):
+    num_accounts = len(df)
+    prob = pulp.LpProblem("CSM_Routing_Optimization", pulp.LpMinimize)
+    x = pulp.LpVariable.dicts("x", [(i, j) for i in range(num_accounts) for j in range(num_csms)], cat='Binary')
+
+    # Calculate total scores for each account
+    total_scores = df['health_score'] + df['propensity_score'] + df['churn_score'] + df['revenue']
+    
+    # Auxiliary variables for the total score assigned to each CSM
+    total_csm_scores = [pulp.LpVariable(f"total_score_{j}", cat='Continuous') for j in range(num_csms)]
+    
+    for j in range(num_csms):
+        prob += total_csm_scores[j] == pulp.lpSum(x[i, j] * total_scores.iloc[i] for i in range(num_accounts))
+    
+    # Calculate the average total score
+    avg_total_score = pulp.lpSum(total_csm_scores[j] for j in range(num_csms)) / num_csms
+    
+    # Define auxiliary variables for differences, absolute differences, and squared differences
+    diff = [pulp.LpVariable(f"diff_{j}", cat='Continuous') for j in range(num_csms)]
+    abs_diff = [pulp.LpVariable(f"abs_diff_{j}", lowBound=0, cat='Continuous') for j in range(num_csms)]
+    diff_squared = [pulp.LpVariable(f"diff_squared_{j}", lowBound=0, cat='Continuous') for j in range(num_csms)]
+    
+    # Constrain abs_diff to be the absolute value of diff
+    for j in range(num_csms):
+        prob += abs_diff[j] >= diff[j]
+        prob += abs_diff[j] >= -diff[j]
+
+    # Constrain diff_squared to be at least the value of abs_diff
+    for j in range(num_csms):
+        prob += diff_squared[j] >= abs_diff[j]
+
+    # Set constraints to match the differences
+    for j in range(num_csms):
+        prob += diff[j] == total_csm_scores[j] - avg_total_score
+
+    # Objective function: minimize the sum of squared differences
+    prob += pulp.lpSum(diff_squared[j] for j in range(num_csms))
+
+    # Constraint 1: Each account is assigned to exactly one CSM
+    for i in range(num_accounts):
+        prob += pulp.lpSum(x[i, j] for j in range(num_csms)) == 1
+
+    # Constraint 2: Each CSM is assigned no more than max_accounts_per_csm accounts
+    for j in range(num_csms):
+        prob += pulp.lpSum(x[i, j] for i in range(num_accounts)) <= max_accounts_per_csm
+
+    # Define current assignment (for reducing shuffling)
+    current_assignment = df['csm_name'].map(csm_mapping)
+
+    # Constraint 3: Minimize shuffling by penalizing changes in assignment
+    shuffle_penalty = pulp.lpSum(x[i, j] * (current_assignment.iloc[i] != j) for i in range(num_accounts) for j in range(num_csms) if pd.notna(current_assignment.iloc[i]))
+    prob += shuffle_penalty
+
+    # Calculate the mean number of assignments for existing CSMs
+    mean_assignments = num_accounts / num_csms
+
+    # Identify indices of new CSMs
+    new_csms_start = num_csms - len(new_csms)
+    new_csm_indices = list(range(new_csms_start, num_csms))
+    new_csms = [csm for csm, index in csm_mapping.items() if index in new_csm_indices]
+    print("New CSMs and their indices:", list(zip(new_csms, new_csm_indices)))
+
+    # Constraints for new CSMs to get a balanced number of assignments
+    for j in new_csm_indices:
+        prob += pulp.lpSum(x[i, j] for i in range(num_accounts)) >= mean_assignments * 0.5
+        prob += pulp.lpSum(x[i, j] for i in range(num_accounts)) <= mean_assignments * 1.5
+
+    # Additional constraint: Minimum total score for new CSMs
+    min_total_score = total_scores.sum() / (num_csms * 1.2)  # Adjust the factor to increase complexity
+    for j in new_csm_indices:
+        prob += total_csm_scores[j] >= min_total_score
+
+    # Penalize assigning too many accounts from removed CSMs to new CSMs
+    if removed_csm_accounts is not None:
+        total_removed_accounts = removed_csm_accounts.sum()
+        allowed_removed_accounts_per_new_csm = total_removed_accounts / len(new_csm_indices)
+        for j in new_csm_indices:
+            prob += pulp.lpSum(x[i, j] * removed_csm_accounts.iloc[i] for i in range(num_accounts)) <= allowed_removed_accounts_per_new_csm
+
+    # Prevent reassigning specific accounts for fixed CSMs
+    for fixed_csm, account_ids in fixed_assignments.items():
+        fixed_csm_index = csm_mapping[fixed_csm]
+        for account_id in account_ids:
+            i = df.index[df['account_id'] == account_id].tolist()[0]
+            prob += x[i, fixed_csm_index] == 1
+
+    # Prevent specific assignments
+    for restricted_csm, account_ids in restricted_assignments.items():
+        restricted_csm_index = csm_mapping[restricted_csm]
+        for account_id in account_ids:
+            i = df.index[df['account_id'] == account_id].tolist()[0]
+            prob += x[i, restricted_csm_index] == 0
+
+    # Ensure parent-child accounts are assigned to the same CSM
+    for parent, children in parent_child_accounts.items():
+        parent_index = df.index[df['account_id'] == parent].tolist()[0]
+        for child in children:
+            child_index = df.index[df['account_id'] == child].tolist()[0]
+            for j in range(num_csms):
+                prob += x[parent_index, j] == x[child_index, j]
+
+    # Handle overflow of parent-child accounts within CSM groups
+    for parent, children in parent_child_accounts.items():
+        parent_index = df.index[df['account_id'] == parent].tolist()[0]
+        for group in csm_groups.values():
+            group_indices = [csm_mapping[csm] for csm in group]
+            for j in group_indices:
+                prob += pulp.lpSum(x[parent_index, k] for k in group_indices) <= max_accounts_per_csm
+                for child in children:
+                    child_index = df.index[df['account_id'] == child].tolist()[0]
+                    prob += pulp.lpSum(x[child_index, k] for k in group_indices) <= max_accounts_per_csm
+
+    return prob, x
+
+# Example usage:
+def modify_csm_list(df, csms_to_add=[], csms_to_remove=[], fixed_assignments={}, restricted_assignments={}, parent_child_accounts={}, csm_groups={}):
+    # Track accounts from removed CSMs
+    removed_csm_accounts = df['csm_name'].isin(csms_to_remove).astype(int)
+
+    # Mark the accounts with removed CSMs as unassigned (NaN)
+    df.loc[df['csm_name'].isin(csms_to_remove), 'csm_name'] = np.nan
+    
+    # Create a list of current CSMs excluding the ones to be removed
+    current_csms = [csm for csm in df['csm_name'].dropna().unique() if csm not in csms_to_remove]
+    
+    # Add new CSMs to the pool
+    new_csm_list = current_csms + csms_to_add
+    csm_mapping = {csm: i for i, csm in enumerate(new_csm_list)}
+    
+    # Solve the problem with the updated CSM list
+    prob, x = initialize_problem(df, len(new_csm_list), csms_to_add, csm_mapping, fixed_assignments=fixed_assignments, restricted_assignments=restricted_assignments, parent_child_accounts=parent_child_accounts, csm_groups=csm_groups, removed_csm_accounts=removed_csm_accounts)
+    prob.solve()
+    
+    # Extract the assignments
+    num_accounts = len(df)
+    assignments = [(i, j) for i in range(num_accounts) for j in range(len(new_csm_list)) if pulp.value(x[i, j]) == 1]
+    optimized_df = df.copy()
+    optimized_df['new_csm_name'] = [new_csm_list[j] for i, j in assignments]
+    
+    return optimized_df
+
+# Data generation for example usage
+num_existing_csms = 20  # Assume initially 20 CSMs
+df = pd.DataFrame({
+    "account_id": [f"account_{i+1}" for i in range(500)],
+    "csm_name": np.random.choice([f"csm_{i+1}" for i in range(num_existing_csms)], size=500),
+    "health_score": np.random.randint(0, 101, size=500),
+    "propensity_score": np.random.randint(0, 101, size=500),
+    "churn_score": np.random.randint(0, 101, size=500),
+    "revenue": np.random.randint(0, 10001, size=500)  # Assuming revenue is in the range of 0 to 10,000
+})
+
+# Example usage
+csms_to_add = ['csm_21', 'csm_22']
+csms_to_remove = ['csm_2', 'csm_5']
+fixed_assignments = {
+    'csm_1': ['account_1', 'account_2'],  # Example of specific accounts that should remain assigned to csm_1
+}
+restricted_assignments = {
+    'csm_2': ['account_234'],  # Example of specific accounts that should never be assigned to csm_2
+}
+parent_child_accounts = {
+    'account_123': ['account_124', 'account_125']  # Example of parent-child relationships
+}
+csm_groups = {
+    'group_1': ['csm_1', 'csm_2', 'csm_3'],  # Example of CSM groups
+    'group_2': ['csm_4', 'csm_5', 'csm_6']
+}
+
+optimized_df = modify_csm_list(df, csms_to_add=csms_to_add, csms_to_remove=csms_to_remove, fixed_assignments=fixed_assignments, restricted_assignments=restricted_assignments, parent_child_accounts=parent_child_accounts, csm_groups=csm_groups)
+print("Optimization after modifying CSM list:")
+print(optimized_df['new_csm_name'].value_counts())
+print(get_total_scores(optimized_df, 'new_csm_name'))
+
+# Update csm_name column values before adding new accounts
+df['csm_name'] = optimized_df['new_csm_name']
+
+# Adding new accounts example:
+new_accounts = pd.DataFrame({
+    "account_id": [f"new_account_{i+1}" for i in range(50)],
+    "health_score": np.random.randint(0, 101, size=50),
+    "propensity_score": np.random.randint(0, 101, size=50),
+    "churn_score": np.random.randint(0, 101, size=50),
+    "revenue": np.random.randint(0, 10001, size=50)  # Assuming revenue is in the range of 0 to 10,000
+})
+
+# Now, add the new accounts to the updated dataframe
+optimized_df_with_new_accounts = add_new_accounts(df, new_accounts)
+print("Optimization after adding new accounts:")
+print(optimized_df_with_new_accounts['new_csm_name'].value_counts())
+print(get_total_scores(optimized_df_with_new_accounts, 'new_csm_name'))
+
+# Removing accounts example:
+accounts_to_remove = [f"account_{i+1}" for i in range(10)]
+optimized_df_with_removed_accounts = remove_accounts(optimized_df_with_new_accounts, accounts_to_remove)
+print("Optimization after removing accounts:")
+print(optimized_df_with_removed_accounts['new_csm_name'].value_counts())
+print(get_total_scores(optimized_df_with_removed_accounts, 'new_csm_name'))

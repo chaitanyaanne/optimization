@@ -1,0 +1,74 @@
+import pandas as pd
+
+# Sample original DataFrame
+df = pd.DataFrame({
+    "account_id": [f"account_{i+1}" for i in range(8)],
+    "csm_name": ['csm_1', 'csm_2', 'csm_3', 'csm_4', 'csm_1', 'csm_2', 'csm_3', 'csm_4'],
+    "health_score": [50, 60, 70, 40, 50, 60, 70, 40],
+    "propensity_score": [20, 30, 25, 35, 20, 30, 25, 35],
+    "churn_score": [10, 20, 15, 25, 10, 20, 15, 25],
+    "revenue": [70, 80, 90, 100, 70, 80, 90, 100]
+})
+
+# Sample optimized DataFrame
+optimized_df = pd.DataFrame({
+    "account_id": [f"account_{i+1}" for i in range(8)],
+    "new_csm_name": ['csm_1', 'csm_1', 'csm_2', 'csm_2', 'csm_3', 'csm_3', 'csm_4', 'csm_4'],
+    "health_score": [50, 60, 70, 40, 50, 60, 70, 40],
+    "propensity_score": [20, 30, 25, 35, 20, 30, 25, 35],
+    "churn_score": [10, 20, 15, 25, 10, 20, 15, 25],
+    "revenue": [70, 80, 90, 100, 70, 80, 90, 100]
+})
+
+def get_total_scores(df, csm_column):
+    total_scores = df.groupby(csm_column)[['health_score', 'propensity_score', 'churn_score', 'revenue']].sum()
+    total_scores['total_score'] = total_scores.sum(axis=1)
+    return total_scores
+
+def analyze_assignments(original_df, optimized_df):
+    # Calculate total scores before and after optimization
+    original_scores = get_total_scores(original_df, 'csm_name')
+    optimized_scores = get_total_scores(optimized_df, 'new_csm_name')
+    
+    # Calculate the number of accounts before and after optimization
+    original_account_counts = original_df['csm_name'].value_counts()
+    optimized_account_counts = optimized_df['new_csm_name'].value_counts()
+    
+    # Create a summary dataframe
+    summary_df = pd.DataFrame({
+        'original_total_score': original_scores['total_score'],
+        'optimized_total_score': optimized_scores['total_score'],
+        'original_account_count': original_account_counts,
+        'optimized_account_count': optimized_account_counts
+    }).fillna(0)  # Fill NaNs with 0 for CSMs that may not have assignments
+
+    # Calculate changes
+    summary_df['score_change'] = summary_df['optimized_total_score'] - summary_df['original_total_score']
+    summary_df['account_count_change'] = summary_df['optimized_account_count'] - summary_df['original_account_count']
+    
+    return summary_df
+
+# Generate the summary analysis
+summary_df = analyze_assignments(df, optimized_df)
+print("Summary of Changes in Assignments:")
+print(summary_df)
+
+import matplotlib.pyplot as plt
+
+# Plotting the changes for better visualization
+fig, axes = plt.subplots(2, 1, figsize=(12, 10))
+
+# Change in Total Scores
+summary_df['score_change'].plot(kind='bar', ax=axes[0], color='skyblue')
+axes[0].set_title('Change in Total Scores per CSM')
+axes[0].set_xlabel('CSM')
+axes[0].set_ylabel('Score Change')
+
+# Change in Number of Accounts
+summary_df['account_count_change'].plot(kind='bar', ax=axes[1], color='lightgreen')
+axes[1].set_title('Change in Number of Accounts per CSM')
+axes[1].set_xlabel('CSM')
+axes[1].set_ylabel('Account Count Change')
+
+plt.tight_layout()
+plt.show()

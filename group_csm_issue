@@ -1,0 +1,17 @@
+    # Ensure parent-child accounts are assigned to the same CSM, considering groups
+    for parent, children in parent_child_accounts.items():
+        parent_index = df.index[df['account_id'] == parent].tolist()[0]
+        parent_csm = df.at[parent_index, 'csm_name']
+
+        if parent_csm in csm_mapping:
+            parent_csm_index = csm_mapping[parent_csm]
+            # Handle parent-child within the same CSM or group
+            if parent_csm in {csm for group in csm_groups.values() for csm in group}:
+                for child in children:
+                    child_index = df.index[df['account_id'] == child].tolist()[0]
+                    prob += x[child_index, parent_csm_index] == x[parent_index, parent_csm_index]
+            else:
+                # Parent is ungrouped, handle as a normal assignment
+                for child in children:
+                    child_index = df.index[df['account_id'] == child].tolist()[0]
+                    prob += x[child_index, parent_csm_index] == x[parent_index, parent_csm_index]

@@ -1,0 +1,15 @@
+    # Balancing need_category
+    need_categories = df['need_category'].unique()
+    category_counts = {category: df['need_category'].value_counts()[category] for category in need_categories}
+    mean_category_counts = {category: category_counts[category] / num_csms for category in need_categories}
+
+    category_indices = {category: {i: pulp.LpVariable(f"category_{category}_csm_{j}", cat='Continuous') for j in range(num_csms)} for category in need_categories}
+
+    for category in need_categories:
+        for j in range(num_csms):
+            prob += category_indices[category][j] == pulp.lpSum(x[i, j] for i in range(num_accounts) if df['need_category'].iloc[i] == category)
+
+    for category in need_categories:
+        for j in range(num_csms):
+            prob += category_indices[category][j] <= mean_category_counts[category] * 1.2  # Adjust the factor as needed
+            prob += category_indices[category][j] >= mean_category_counts[category] * 0.8  # Adjust the factor as needed

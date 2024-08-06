@@ -1,16 +1,15 @@
-
 # Balancing need_category only for new CSMs
 need_categories = df['need_category'].unique()
 category_counts = df['need_category'].value_counts().to_dict()
 mean_category_counts = {category: category_counts[category] / len(new_csm_indices) for category in need_categories}
 
-category_indices = {category: {j: pulp.LpVariable(f"category_{category}_csm_{j}", lowBound=0, cat='Continuous') for j in new_csm_indices} for category in need_categories}
+# Debugging prints
+print("Need categories:", need_categories)
+print("Category counts:", category_counts)
+print("Mean category counts:", mean_category_counts)
 
+# Constraints for new CSMs to get a balanced number of assignments based on need_category
 for category in need_categories:
     for j in new_csm_indices:
-        prob += category_indices[category][j] == pulp.lpSum(x[i, j] for i in range(num_accounts) if df['need_category'].iloc[i] == category)
-
-for category in need_categories:
-    for j in new_csm_indices:
-        prob += category_indices[category][j] <= mean_category_counts[category] * 1.2  # Adjust the factor as needed
-        prob += category_indices[category][j] >= mean_category_counts[category] * 0.8  # Adjust the factor as needed
+        prob += pulp.lpSum(x[i, j] for i in range(num_accounts) if df['need_category'].iloc[i] == category) <= mean_category_counts[category] * 1.2
+        prob += pulp.lpSum(x[i, j] for i in range(num_accounts) if df['need_category'].iloc[i] == category) >= mean_category_counts[category] * 0.8

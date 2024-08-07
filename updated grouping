@@ -1,19 +1,51 @@
-    # Ensure parent-child accounts are assigned to the same CSM
-    for parent, children in parent_child_accounts.items():
-        parent_index = df.index[df['account_id'] == parent].tolist()[0]
-        for child in children:
-            child_index = df.index[df['account_id'] == child].tolist()[0]
-            for j in range(num_csms):
-                prob += x[child_index, j] == x[parent_index, j]
-                # If overflow, assign to another CSM within the same group if a group exists
-                if csm_groups and parent in csm_mapping:
-                    parent_csm_index = csm_mapping[parent]
-                    if parent in {csm for group in csm_groups.values() for csm in group}:
-                        group = [group for group in csm_groups.values() if parent in group][0]
-                        for other_csm in group:
-                            if other_csm != parent and other_csm in csm_mapping:
-                                other_csm_index = csm_mapping[other_csm]
-                                prob += x[child_index, other_csm_index] == x[parent_index, parent_csm_index]
-                    else:
-                        random_csm_index = np.random.choice(new_csm_indices)
-                        prob += x[child_index, random_csm_index] == x[parent_index, random_csm_index]
+# Prevent reassigning existing parent-child related accounts
+for parent, children in parent_child_accounts.items():
+    parent_index_list = df.index[df['account_id'] == parent].tolist()
+    if not parent_index_list:
+        continue
+    parent_index = parent_index_list[0]
+
+    for child in children:
+        child_index_list = df.index[df['account_id'] == child].tolist()
+        if not child_index_list:
+            continue
+        child_index = child_index_list[0]
+
+        # Ensure existing assignments are not changed
+        if pd.notna(df.loc[parent_index, 'csm_name']):
+            parent_csm_index = csm_mapping[df.loc[parent_index, 'csm_name']]
+            prob += x[parent_index, parent_csm_index] == 1
+            prob += x[child_index, parent_csm_index] == 1
+
+        # Handle new accounts
+        if child_index in new_accounts:
+            parent_csm_index = np.argmax([pulp.value(x[parent_index, j]) for j in range(num_csms)])
+
+            # Assign the child account to the same CSM as the parent
+            prob += x[child_index, parent_csm_index] == 1
+
+            # Handle overflow: if the parent's CSM exceeds max_accounts_per_csm, assign to a CSM from the same group
+            parent_csm_name = df.loc[parent_index, 'csm_name']
+            parent_csm_group = None
+            for group_name, group_members in csm_groups.items():
+                if parent_csm_name in group_members:
+                    parent_csm_group = group_members
+                    break
+
+            if parent_csm_group:
+                # Check if the parent's CSM exceeds the max_accounts_per_csm
+                overflow_assignment = pulp.lpSum(x[i, parent_csm_index] for i in range(num_accounts)) > max_accounts_per_csm
+
+                # Assign to a CSM within the same group if overflow occurs
+                if overflow_assignment:
+                    for group_csm in parent_csm_group:
+                        if group_csm in csm_mapping and group_csm != parent_csm_name:
+                            group_csm_index = csm_mapping[group_csm]
+                            prob += x[child_index, group_csm_index] == 1
+                            break  # Assign to the first available CSM in the group
+            else:
+                # Assign to any CSM if no group is found
+                for j in range(num_csms):
+                    if j != parent_csm_index:
+                        prob += x[child_index, j] == (pulp.lpSum(x[i, parent_csm_index] for i in range(num_accounts)) > max_accounts_per_csm)
+                        break  # Assign to the first available CSM

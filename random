@@ -1,0 +1,134 @@
+import pandas as pd
+import numpy as np
+import random
+
+def calculate_mean_score(df, num_csms):
+    total_score = (df['health_score'] + df['propensity_score'] + df['churn_score'] + df['revenue']).sum()
+    return total_score / num_csms
+
+def create_account_pool(df, csm_assignments, mean_score):
+    account_pool = []
+    new_csm_assignments = {csm: [] for csm in csm_assignments}
+
+    for csm, accounts in csm_assignments.items():
+        random.shuffle(accounts)
+        current_score = 0
+        for idx in accounts:
+            account_score = df.loc[idx, 'health_score'] + df.loc[idx, 'propensity_score'] + df.loc[idx, 'churn_score'] + df.loc[idx, 'revenue']
+            if current_score + account_score > mean_score:
+                account_pool.append(idx)
+            else:
+                current_score += account_score
+                new_csm_assignments[csm].append(idx)
+
+    return account_pool, new_csm_assignments
+
+def reassign_accounts(df, new_csms, csms_to_remove, max_accounts_per_csm=30):
+    current_csms = df['csm_name'].unique().tolist()
+    csm_assignments = {csm: [] for csm in current_csms}
+    total_scores = df['health_score'] + df['propensity_score'] + df['churn_score'] + df['revenue']
+
+    for idx, row in df.iterrows():
+        csm = row['csm_name']
+        csm_assignments[csm].append(idx)
+    
+    mean_score_before = calculate_mean_score(df, len(current_csms))
+    mean_score_after = calculate_mean_score(df, len(current_csms) - len(csms_to_remove) + len(new_csms))
+    
+    # Remove accounts from CSMs to be removed and create a pool of accounts to be reassigned
+    account_pool = []
+    for csm in csms_to_remove:
+        if csm in csm_assignments:
+            account_pool.extend(csm_assignments.pop(csm))
+    
+    # Create new CSM assignments and add new CSMs to the pool
+    new_csm_assignments = {}
+    for new_csm in new_csms:
+        new_csm_assignments[new_csm] = []
+
+    # Shuffle the account pool
+    random.shuffle(account_pool)
+    
+    # Reassign accounts to new CSMs
+    for idx in account_pool:
+        account_score = df.loc[idx, 'health_score'] + df.loc[idx, 'propensity_score'] + df.loc[idx, 'churn_score'] + df.loc[idx, 'revenue']
+        best_csm = None
+        min_imbalance = float('inf')
+
+        for csm in new_csm_assignments:
+            if len(new_csm_assignments[csm]) < max_accounts_per_csm:
+                new_score = sum(total_scores[account_idx] for account_idx in new_csm_assignments[csm]) + account_score
+                avg_total_score = np.mean([sum(total_scores[account_idx] for account_idx in new_csm_assignments[c]) for c in new_csm_assignments])
+
+                score_diff = new_score - avg_total_score
+                imbalance = score_diff**2
+
+                if imbalance < min_imbalance:
+                    min_imbalance = imbalance
+                    best_csm = csm
+        
+        new_csm_assignments[best_csm].append(idx)
+
+    # If no CSMs are removed, redistribute some accounts from existing CSMs to new CSMs
+    if not csms_to_remove:
+        existing_csms = list(csm_assignments.keys())
+        random.shuffle(existing_csms)
+        
+        for csm in existing_csms:
+            while len(csm_assignments[csm]) > max_accounts_per_csm // 2:
+                idx = csm_assignments[csm].pop()
+                account_pool.append(idx)
+                if not account_pool:
+                    break
+
+    # Reassign any remaining accounts in the pool to new CSMs
+    for idx in account_pool:
+        account_score = df.loc[idx, 'health_score'] + df.loc[idx, 'propensity_score'] + df.loc[idx, 'churn_score'] + df.loc[idx, 'revenue']
+        best_csm = None
+        min_imbalance = float('inf')
+
+        for csm in new_csm_assignments:
+            if len(new_csm_assignments[csm]) < max_accounts_per_csm:
+                new_score = sum(total_scores[account_idx] for account_idx in new_csm_assignments[csm]) + account_score
+                avg_total_score = np.mean([sum(total_scores[account_idx] for account_idx in new_csm_assignments[c]) for c in new_csm_assignments])
+
+                score_diff = new_score - avg_total_score
+                imbalance = score_diff**2
+
+                if imbalance < min_imbalance:
+                    min_imbalance = imbalance
+                    best_csm = csm
+        
+        new_csm_assignments[best_csm].append(idx)
+
+    # Merge the new assignments with the existing assignments
+    for csm in new_csm_assignments:
+        csm_assignments[csm] = new_csm_assignments[csm]
+
+    # Update the DataFrame with new assignments
+    optimized_df = df.copy()
+    for csm, indices in csm_assignments.items():
+        for i in indices:
+            optimized_df.at[i, 'csm_name'] = csm
+
+    return optimized_df
+
+# Data generation for example usage
+num_existing_csms = 20  # Assume initially 20 CSMs
+df = pd.DataFrame({
+    "account_id": [f"account_{i+1}" for i in range(100)],  # Larger dataset for demonstration
+    "csm_name": np.random.choice([f"csm_{i+1}" for i in range(num_existing_csms)], size=100),
+    "health_score": np.random.randint(0, 101, size=100),
+    "propensity_score": np.random.randint(0, 101, size=100),
+    "churn_score": np.random.randint(0, 101, size=100),
+    "revenue": np.random.randint(0, 10001, size=100),  # Assuming revenue is in the range of 0 to 10,000
+    "need_category": np.random.choice(['low', 'medium', 'high'], size=100)  # Adding need_category
+})
+
+# Example usage
+new_csms = ['csm_21', 'csm_22']
+csms_to_remove = []
+max_accounts_per_csm = 10
+optimized_df = reassign_accounts(df, new_csms, csms_to_remove, max_accounts_per_csm)
+print("Optimization with Randomized Greedy Reassignment:")
+print(optimized_df['csm_name'].value_counts())

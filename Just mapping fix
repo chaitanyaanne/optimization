@@ -1,0 +1,34 @@
+# Ensure existing assignments are not changed
+for parent, children in parent_child_accounts.items():
+    parent_index_list = df.index[df['account_id'] == parent].tolist()
+    if not parent_index_list:
+        continue  # Skip if parent ID is not found
+    parent_index = parent_index_list[0]
+
+    if pd.isna(df.loc[parent_index, 'csm_name']):
+        continue  # Skip if parent does not have a CSM assigned
+
+    parent_csm_name = df.loc[parent_index, 'csm_name']
+    if parent_csm_name not in csm_mapping:
+        continue  # Skip if the parent CSM is not in the mapping
+
+    parent_csm_index = csm_mapping[parent_csm_name]
+
+    # Ensure the parent's assignment is fixed
+    prob += x[parent_index, parent_csm_index] == 1
+
+    for child in children:
+        child_index_list = df.index[df['account_id'] == child].tolist()
+        if not child_index_list:
+            continue  # Skip if child ID is not found
+        child_index = child_index_list[0]
+
+        if pd.isna(df.loc[child_index, 'csm_name']):
+            continue  # Skip if child does not have a CSM assigned
+
+        child_csm_name = df.loc[child_index, 'csm_name']
+        if child_csm_name not in csm_mapping:
+            continue  # Skip if the child CSM is not in the mapping
+
+        # Ensure the child's assignment is fixed to the same CSM as the parent
+        prob += x[child_index, parent_csm_index] == 1

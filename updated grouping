@@ -1,0 +1,19 @@
+    # Ensure parent-child accounts are assigned to the same CSM
+    for parent, children in parent_child_accounts.items():
+        parent_index = df.index[df['account_id'] == parent].tolist()[0]
+        for child in children:
+            child_index = df.index[df['account_id'] == child].tolist()[0]
+            for j in range(num_csms):
+                prob += x[child_index, j] == x[parent_index, j]
+                # If overflow, assign to another CSM within the same group if a group exists
+                if csm_groups and parent in csm_mapping:
+                    parent_csm_index = csm_mapping[parent]
+                    if parent in {csm for group in csm_groups.values() for csm in group}:
+                        group = [group for group in csm_groups.values() if parent in group][0]
+                        for other_csm in group:
+                            if other_csm != parent and other_csm in csm_mapping:
+                                other_csm_index = csm_mapping[other_csm]
+                                prob += x[child_index, other_csm_index] == x[parent_index, parent_csm_index]
+                    else:
+                        random_csm_index = np.random.choice(new_csm_indices)
+                        prob += x[child_index, random_csm_index] == x[parent_index, random_csm_index]

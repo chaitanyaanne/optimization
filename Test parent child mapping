@@ -1,0 +1,61 @@
+import pandas as pd
+import pulp
+
+# Example DataFrame
+data = {
+    'account_id': ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8'],
+    'parent_account_id': [None, 'A1', None, 'A3', 'A3', None, 'A6', None],
+    'csm_name': ['CSM1', 'CSM1', 'CSM2', 'CSM2', 'CSM2', 'CSM3', 'CSM3', 'CSM4']
+}
+df = pd.DataFrame(data)
+
+csm_mapping = {'CSM1': 0, 'CSM2': 1, 'CSM3': 2, 'CSM4': 3, 'CSM5': 4}
+parent_child_accounts = {
+    'A1': ['A2'],
+    'A3': ['A4', 'A5'],
+    'A6': ['A7']
+}
+
+# Initialize problem
+prob = pulp.LpProblem("CSM_Assignment", pulp.LpMinimize)
+num_csms = len(csm_mapping)
+num_accounts = len(df)
+x = pulp.LpVariable.dicts("x", [(i, j) for i in range(num_accounts) for j in range(num_csms)], cat='Binary')
+
+# Apply constraints based on parent-child mapping without iterating through rows
+for parent, children in parent_child_accounts.items():
+    parent_index_list = df.index[df['account_id'] == parent].tolist()
+    if not parent_index_list:
+        continue  # Skip if parent ID is not found
+    parent_index = parent_index_list[0]
+
+    parent_csm_name = df.loc[parent_index, 'csm_name']
+    if pd.isna(parent_csm_name) or parent_csm_name not in csm_mapping:
+        continue  # Skip if parent does not have a valid CSM assigned or not in mapping
+
+    parent_csm_index = csm_mapping[parent_csm_name]
+
+    for child in children:
+        child_index_list = df.index[df['account_id'] == child].tolist()
+        if not child_index_list:
+            continue  # Skip if child ID is not found
+        child_index = child_index_list[0]
+
+        child_csm_name = df.loc[child_index, 'csm_name']
+        if pd.isna(child_csm_name) or child_csm_name not in csm_mapping:
+            continue  # Skip if child does not have a valid CSM assigned or not in mapping
+
+        child_csm_index = csm_mapping[child_csm_name]
+
+        # Apply constraints only if parent and child have the same CSM
+        if parent_csm_index == child_csm_index:
+            prob += x[parent_index, parent_csm_index] == 1
+            prob += x[child_index, parent_csm_index] == 1
+
+# Solve the problem
+prob.solve()
+
+# Print constraints for verification
+for v in prob.variables():
+    if v.varValue is not None:
+        print(f"{v.name} = {v.varValue}")

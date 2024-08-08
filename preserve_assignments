@@ -1,0 +1,19 @@
+
+# Dictionary to store which accounts should have their assignments preserved
+preserve_assignments = {}
+
+# Iterate through each row to determine if assignments should be preserved
+for index, row in df.iterrows():
+    parent_id = row['parent_account_id']
+    csm_name = row['csm_name']
+    if pd.notna(parent_id) and pd.notna(csm_name) and csm_name in csm_mapping:
+        csm_index = csm_mapping[csm_name]
+        # Find other accounts with the same parent and CSM
+        sibling_indices = df[(df['parent_account_id'] == parent_id) & (df['csm_name'] == csm_name)].index.tolist()
+        if len(sibling_indices) > 1:
+            for sibling_index in sibling_indices:
+                preserve_assignments[sibling_index] = csm_index
+
+# Apply constraints to preserve the existing assignments
+for account_index, csm_index in preserve_assignments.items():
+    prob += x[account_index, csm_index] == 1

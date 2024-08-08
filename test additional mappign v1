@@ -1,0 +1,23 @@
+# Apply constraints based on parent-child mapping to preserve existing child assignments
+for parent, children in parent_child_accounts.items():
+    # Find the current CSM assignments for the children
+    child_csms = {}
+    for child in children:
+        child_index_list = df.index[df['account_id'] == child].tolist()
+        if not child_index_list:
+            continue  # Skip if child ID is not found
+        child_index = child_index_list[0]
+
+        child_csm_name = df.loc[child_index, 'csm_name']
+        if pd.notna(child_csm_name) and child_csm_name in csm_mapping:
+            child_csm_index = csm_mapping[child_csm_name]
+            if child_csm_index in child_csms:
+                child_csms[child_csm_index].append(child_index)
+            else:
+                child_csms[child_csm_index] = [child_index]
+
+    # If there are multiple children assigned to the same CSM, preserve these assignments
+    for csm_index, child_indices in child_csms.items():
+        if len(child_indices) > 1:
+            for child_index in child_indices:
+                prob += x[child_index, csm_index] == 1

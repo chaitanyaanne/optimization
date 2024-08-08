@@ -1,0 +1,7 @@
+# Additional constraints to prevent reassignment of existing CSMs to new ones
+for index, row in df.iterrows():
+    csm_name = row['csm_name']
+    if pd.notna(csm_name) and csm_name in csm_mapping:
+        csm_index = csm_mapping[csm_name]
+        account_index = df.index[df['account_id'] == row['account_id']].tolist()[0]
+        prob += x[account_index, csm_index] == 1

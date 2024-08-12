@@ -1,0 +1,27 @@
+    ### New Categorical Column: Balancing 'red' and 'green' Across New CSMs
+
+    # Calculate the total number of 'red' and 'green' accounts
+    total_red_accounts = sum(df['Category_Color'] == 'red')
+    total_green_accounts = sum(df['Category_Color'] == 'green')
+
+    # Calculate the mean number of 'red' and 'green' accounts per new CSM
+    mean_red_accounts = total_red_accounts / len(new_csm_indices)
+    mean_green_accounts = total_green_accounts / len(new_csm_indices)
+
+    # Constraints to ensure balanced distribution of 'red' and 'green' accounts across new CSMs
+    for j in new_csm_indices:
+        # Balance 'red' accounts
+        prob += pulp.lpSum(
+            x[i, j] for i in range(num_accounts) if df['Category_Color'].iloc[i] == 'red'
+        ) >= mean_red_accounts * 0.9
+        prob += pulp.lpSum(
+            x[i, j] for i in range(num_accounts) if df['Category_Color'].iloc[i] == 'red'
+        ) <= mean_red_accounts * 1.1
+
+        # Balance 'green' accounts
+        prob += pulp.lpSum(
+            x[i, j] for i in range(num_accounts) if df['Category_Color'].iloc[i] == 'green'
+        ) >= mean_green_accounts * 0.9
+        prob += pulp.lpSum(
+            x[i, j] for i in range(num_accounts) if df['Category_Color'].iloc[i] == 'green'
+        ) <= mean_green_accounts * 1.1

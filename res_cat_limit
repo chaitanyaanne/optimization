@@ -1,0 +1,11 @@
+    # Category-based constraints for new CSMs with specific category limits
+    for category_key, csm_list in category_limits.items():
+        category_1, category_2, limit = category_key
+        for j in new_csm_indices:
+            csm_name = new_csms[j - new_csms_start]
+            if csm_name in csm_list:
+                prob += pulp.lpSum(
+                    x[i, j] 
+                    for i in range(num_accounts) 
+                    if df['Category_1'].iloc[i] == category_1 and df['Category_2'].iloc[i] == category_2
+                ) <= limit

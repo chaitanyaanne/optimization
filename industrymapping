@@ -1,0 +1,27 @@
+
+# Step 1: Reassign any accounts currently assigned to the wrong CSM
+for i in range(num_accounts):
+    current_csm = df.at[i, 'csm_name']
+    account_industry = df.at[i, 'industry']
+    if current_csm in csm_industry_mapping:
+        csm_industry = csm_industry_mapping[current_csm]
+        if account_industry != csm_industry:
+            # Unassign account from current CSM by changing it in the DataFrame
+            print(f"Reassigning account {df.at[i, 'account_id']} from {current_csm} due to industry mismatch.")
+            df.at[i, 'csm_name'] = None  # Temporarily set to None for reassignment in the optimization
+
+# Define the decision variables: x[i, j] is 1 if account i is assigned to CSM j
+x = pulp.LpVariable.dicts("x", [(i, j) for i in range(num_accounts) for j in range(num_csms)], cat='Binary')
+
+# Create the problem instance
+prob = pulp.LpProblem("CSM_Assignment", pulp.LpMinimize)
+
+# Step 2: Add industry constraints to prevent future mismatches
+for i in range(num_accounts):
+    account_industry = df.at[i, 'industry']
+    for j in range(num_csms):
+        csm_name = valid_csms[j]
+        if csm_name in csm_industry_mapping:
+            csm_industry = csm_industry_mapping[csm_name]
+            if account_industry != csm_industry:
+                prob += x[i, j] == 0  # Prevent assignment if industry doesn't match

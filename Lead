@@ -1,0 +1,20 @@
+# Step 2: Add manager constraints to keep
+shuffling within each manager's group of CSMs for manager, csms in
+manager_csm_mapping.items ( ):
+# Get indices of CSMs managed by this
+manager
+manager_csm_indices = [csm_mapping[csm]
+for csm in csms if csm in csm_mapping] for i in range (num_accounts) :
+current_csm = df.at[i, 'csm_name ']
+if current_csm in csms:
+# Constraint to ensure account can
+only be reassigned within this manager's CSMs
+prob += pulp. lpSum(xi, jl for j
+in manager_csm_indices) == 1
+else:
+# Prevent assignment to other
+manager's CSMs
+for j in range (num_csms) :
+if j not in
+manager_csm_indices:
+prob += xi, jl == 0

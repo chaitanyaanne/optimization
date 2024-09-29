@@ -1,0 +1,15 @@
+# Penalty for violating timezone constraints
+timezone_penalty = pulp.LpVariable.dicts("timezone_penalty", [(i, j) for i in range(num_accounts) for j in range(num_csms)], cat='Continuous', lowBound=0)
+
+# Objective: Minimize total penalties for violating timezone constraints
+prob += pulp.lpSum(timezone_penalty[i, j] for i in range(num_accounts) for j in range(num_csms))
+
+# Step 1: Add timezone constraint with penalties (soft constraint)
+for i in range(num_accounts):
+    account_timezone = df.at[i, 'timezone']
+    # For each CSM, check if they handle the account's timezone
+    for csm_name, csm_index in csm_mapping.items():
+        if account_timezone not in csm_timezone_mapping.get(csm_name, []):
+            # Soft constraint: Add penalty for assigning to the wrong timezone
+            prob += x[i, csm_index] <= timezone_penalty[i, csm_index]
+            prob += timezone_penalty[i, csm_index] >= 0.1  # Penalty for timezone mismatch

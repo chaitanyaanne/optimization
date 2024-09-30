@@ -1,0 +1,16 @@
+# Penalty for violating industry size constraints
+industry_size_penalty = pulp.LpVariable.dicts("industry_size_penalty", [(i, j) for i in range(num_accounts) for j in range(num_csms)], cat='Continuous', lowBound=0)
+
+# Objective: Minimize total penalties for violating industry size constraints
+prob += pulp.lpSum(industry_size_penalty[i, j] for i in range(num_accounts) for j in range(num_csms))
+
+# Step 1: Add industry size constraint with penalties (soft constraint)
+for i in range(num_accounts):
+    account_industry_size = df.at[i, 'industry_size']
+    # For each CSM, check if they handle the account's industry size
+    for csm_name, csm_index in csm_mapping.items():
+        csm_industry_size = csm_industry_size_mapping.get(csm_name, 'large')  # Default to 'large' if not specified
+        if account_industry_size != csm_industry_size:
+            # Soft constraint: Add penalty for assigning to the wrong industry size
+            prob += x[i, csm_index] <= industry_size_penalty[i, csm_index]
+            prob += industry_size_penalty[i, csm_index] >= 0.1  # Penalty for industry size mismatch

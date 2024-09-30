@@ -1,0 +1,14 @@
+# Step 1: Add hard industry size constraints without buffer
+for j in range(num_csms):
+    csm_name = valid_csms[j]
+    csm_industry_size = csm_industry_size_mapping.get(csm_name, 'large')  # Default to large if not specified
+
+    # Get all accounts that match the CSM's industry size and are not in fixed assignments
+    matching_accounts = [i for i in range(num_accounts) 
+                         if df.at[i, 'industry_size'] == csm_industry_size and df.at[i, 'account_id'] not in fixed_assignments]
+
+    # Total number of accounts assigned to this CSM, excluding fixed assignments
+    total_accounts_for_csm = pulp.lpSum(x[i, j] for i in range(num_accounts) if df.at[i, 'account_id'] not in fixed_assignments)
+
+    # Hard constraint: All accounts assigned to this CSM must match the industry size
+    pro

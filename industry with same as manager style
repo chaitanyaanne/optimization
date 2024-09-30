@@ -1,10 +1,10 @@
-# Step 1: Add industry constraints to ensure accounts are reassigned within their industry CSMs
-for industry, csms in industry_csm_mapping.items():
-    # Get indices of CSMs that can handle this industry
-    industry_csm_indices = [csm_mapping[csm] for csm in csms if csm in csm_mapping]
+# Step 1: Ensure an account is only reassigned within its industry size
+for industry_size, csms in industry_size_mapping.items():
+    # Get indices of CSMs that can handle this industry size
+    industry_size_csm_indices = [csm_mapping[csm] for csm in csms if csm in csm_mapping]
     
     for i in range(num_accounts):
-        account_industry = df.at[i, 'industry']
-        if account_industry == industry:
-            # Constraint to ensure account can only be reassigned within this industry's CSMs
-            prob += pulp.lpSum(x[i, j] for j in industry_csm_indices) == 1
+        account_industry_size = df.at[i, 'industry_size']
+        if account_industry_size == industry_size:
+            # Constraint to ensure account can only be reassigned within this industry size's CSMs
+            prob += pulp.lpSum(x[i, j] for j in industry_size_csm_indices) == 1

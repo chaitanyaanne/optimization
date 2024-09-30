@@ -11,4 +11,4 @@ for j in range(num_csms):
     total_accounts_for_csm = pulp.lpSum(x[i, j] for i in range(num_accounts) if df.at[i, 'account_id'] not in fixed_assignments)
 
     # Hard constraint: All accounts assigned to this CSM must match the industry size
-    pro
+    prob += pulp.lpSum(x[i, j] for i in matching_accounts) == total_accounts_for_csm

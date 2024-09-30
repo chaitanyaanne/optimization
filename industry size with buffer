@@ -1,0 +1,16 @@
+# Step 1: Add hard industry size constraints with buffer
+buffer_ratio = 0.1  # Allow 10% flexibility for mismatched sizes
+
+# For each CSM, ensure that at least (1 - buffer_ratio) of the accounts match their industry size
+for j in range(num_csms):
+    csm_name = valid_csms[j]
+    csm_industry_size = csm_industry_size_mapping.get(csm_name, 'large')  # Default to large if not specified
+
+    # Get all accounts that match the CSM's industry size
+    matching_accounts = [i for i in range(num_accounts) if df.at[i, 'industry_size'] == csm_industry_size]
+
+    # Total number of accounts assigned to this CSM
+    total_accounts_for_csm = pulp.lpSum(x[i, j] for i in range(num_accounts))
+
+    # Ensure at least (1 - buffer_ratio) of the accounts assigned to this CSM match the industry size
+    prob += pulp.lpSum(x[i, j] for i in matching_accounts) >= (1 - buffer_ratio) * total_accounts_for_csm

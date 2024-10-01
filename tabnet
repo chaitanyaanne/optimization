@@ -1,0 +1,71 @@
+# Import necessary libraries
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from pytorch_tabnet.tab_model import TabNetClassifier
+
+# Data Collection
+# Download the dataset from Kaggle or use your custom dataset
+url = "https://raw.githubusercontent.com/datasciencelearner/Telecom-Churn-Prediction-Data/master/Telco-Customer-Churn.csv"
+data = pd.read_csv(url)
+
+# Basic Preprocessing
+# Dropping customerID as it's not useful
+data = data.drop(['customerID'], axis=1)
+
+# Filling missing values in TotalCharges
+data['TotalCharges'] = pd.to_numeric(data['TotalCharges'], errors='coerce')
+data['TotalCharges'] = data['TotalCharges'].fillna(data['TotalCharges'].mean())
+
+# Encoding categorical features
+for column in data.columns:
+    if data[column].dtype == 'object':
+        encoder = LabelEncoder()
+        data[column] = encoder.fit_transform(data[column])
+
+# Splitting data into features and target variable
+X = data.drop('Churn', axis=1)
+y = data['Churn']
+
+# Splitting dataset into train and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+# Model training
+clf = TabNetClassifier()
+
+# Convert data to numpy arrays
+X_train_np = X_train.values
+X_test_np = X_test.values
+y_train_np = y_train.values.reshape(-1, 1)
+y_test_np = y_test.values.reshape(-1, 1)
+
+# Train the TabNet model
+clf.fit(
+    X_train_np, y_train_np,
+    eval_set=[(X_test_np, y_test_np)],
+    eval_name=['test'],
+    eval_metric=['accuracy'],
+    max_epochs=100,
+    patience=10,
+    batch_size=1024, 
+    virtual_batch_size=128,
+    num_workers=0,
+    drop_last=False
+)
+
+# Inference
+# Predicting on the test data
+y_pred = clf.predict(X_test_np)
+
+# Evaluation Metrics
+print("Accuracy Score:", accuracy_score(y_test_np, y_pred))
+print("\nConfusion Matrix:\n", confusion_matrix(y_test_np, y_pred))
+print("\nClassification Report:\n", classification_report(y_test_np, y_pred))
+
+# Inference for new data (one sample)
+# Assuming we have a new customer data row (fill this with actual data)
+new_customer_data = np.array([[1, 0, 0, 1, 1, 0, 1, 1, 45, 1, 0, 0, 69.2, 1, 1]])  # Example data
+prediction = clf.predict(new_customer_data)
+print(f"Churn prediction for new customer: {prediction[0]}")

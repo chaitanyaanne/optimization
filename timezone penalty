@@ -1,0 +1,14 @@
+penalty_weight = 1000  # Adjust the weight to penalize violations more heavily
+
+for i in range(num_accounts):
+    account_timezone = df.at[i, 'timezone']  # Get the timezone of the account
+    
+    # Apply penalties for assigning accounts to CSMs outside the time zone they handle
+    for j in range(num_csms):
+        # Get the CSM name corresponding to index j
+        csm_name = valid_csms[j]
+        
+        # Check if this CSM can handle the account's time zone
+        if account_timezone not in timezone_mapping.get(csm_name, []):
+            # Apply penalty if the CSM does not handle this time zone
+            prob += penalty_weight * x[i, j]

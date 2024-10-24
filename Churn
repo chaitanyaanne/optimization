@@ -1,37 +1,52 @@
 import pandas as pd
 import numpy as np
 
+# List the stages in chronological order
+stage_order = ['pre-implementation', 'implementation', 'live', 'long term']
+
 # Function to create the churn flag based on tenant life cycle
 def assign_churn_flag(group):
     # Step 1: Check if notice_date is available and assign a churn stage based on the first calendar_date >= notice_date
     if group['notice_date'].notna().any():
-        # Find the stage where churn happened
-        churn_stage = group.loc[group['calendar_date'] >= group['notice_date'].iloc[0], 'segment'].unique()
-        if len(churn_stage) > 0:
-            churn_stage = churn_stage[0]
+        churn_stage_rows = group.loc[(group['calendar_date'] >= group['notice_date'].iloc[0]) & group['segment'].isin(stage_order)]
+        
+        if not churn_stage_rows.empty:
+            # Find the first stage where churn happens
+            churn_stage = churn_stage_rows['segment'].iloc[0]
         else:
             churn_stage = None
     else:
         churn_stage = None
 
-    # Step 2: Apply churn flags based on the segment and churn stage
-    group['churn_flag'] = np.where(
-        # Mark all rows in the stage where the churn happened as 'Churn'
-        (group['segment'] == churn_stage),
-        'Churn',
+    # Step 2: Map stage names to their position in the chronological order
+    group['stage_index'] = group['segment'].map({s: i for i, s in enumerate(stage_order)})
 
-        # Mark all earlier stages as 'Not_churn'
-        np.where(
-            (group['calendar_date'] < group['notice_date'].iloc[0]),
-            'Not_churn',
+    # Step 3: Determine churn flags based on the segment and churn stage
+    if churn_stage:
+        churn_stage_index = stage_order.index(churn_stage)
 
-            # Mark all stages after the churn as 'Null'
-            np.where(group['calendar_date'] > group['notice_date'].iloc[0],
-                     'Null',
-                     np.nan)
+        group['churn_flag'] = np.where(
+            # Mark the rows in the churn stage as 'Churn'
+            group['stage_index'] == churn_stage_index,
+            'Churn',
+
+            # Mark all earlier stages as 'Not_churn'
+            np.where(
+                group['stage_index'] < churn_stage_index,
+                'Not_churn',
+
+                # Mark all later stages as 'Null'
+                np.where(group['stage_index'] > churn_stage_index,
+                         'Null',
+                         np.nan)
+            )
         )
-    )
+    else:
+        group['churn_flag'] = np.nan
 
+    # Drop the helper column 'stage_index' after the flag is assigned
+    group.drop(columns=['stage_index'], inplace=True)
+    
     return group
 
 # Apply the function to each tenant's group

@@ -1,0 +1,34 @@
+import pandas as pd
+import numpy as np
+
+# Function to create the churn flag based on tenant life cycle
+def assign_churn_flag(group):
+    # Step 1: Find the first occurrence of the churn notice for each tenant (based on notice_date)
+    churn_idx = group.loc[group['calendar_date'] >= group['notice_date'], 'segment'].idxmin()  # first index where notice_date is greater or equal to calendar_date
+    churn_stage = group.loc[churn_idx, 'segment'] if not pd.isna(churn_idx) else None
+
+    # Step 2: Apply churn flags based on the segment and churn stage
+    group['churn_flag'] = np.where(
+        # Mark all rows in the stage where the churn happened as 'Churn'
+        (group['segment'] == churn_stage),
+        'Churn',
+
+        # Mark all earlier stages as 'Not_churn'
+        np.where(
+            (group['calendar_date'] < group['notice_date']),
+            'Not_churn',
+
+            # Mark all stages after the churn as 'Null'
+            np.where(group['calendar_date'] > group['notice_date'],
+                     'Null',
+                     np.nan)
+        )
+    )
+
+    return group
+
+# Apply the function to each tenant's group
+df = df.groupby('tenant_id').apply(assign_churn_flag)
+
+# Display the updated DataFrame with the churn_flag column
+df[['tenant_id', 'segment', 'calendar_date', 'notice_date', 'churn_flag']]

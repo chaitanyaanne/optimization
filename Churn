@@ -3,9 +3,16 @@ import numpy as np
 
 # Function to create the churn flag based on tenant life cycle
 def assign_churn_flag(group):
-    # Step 1: Find the first occurrence of the churn notice for each tenant (based on notice_date)
-    churn_idx = group.loc[group['calendar_date'] >= group['notice_date'], 'segment'].idxmin()  # first index where notice_date is greater or equal to calendar_date
-    churn_stage = group.loc[churn_idx, 'segment'] if not pd.isna(churn_idx) else None
+    # Step 1: Check if notice_date is available and assign a churn stage based on the first calendar_date >= notice_date
+    if group['notice_date'].notna().any():
+        # Find the stage where churn happened
+        churn_stage = group.loc[group['calendar_date'] >= group['notice_date'].iloc[0], 'segment'].unique()
+        if len(churn_stage) > 0:
+            churn_stage = churn_stage[0]
+        else:
+            churn_stage = None
+    else:
+        churn_stage = None
 
     # Step 2: Apply churn flags based on the segment and churn stage
     group['churn_flag'] = np.where(
@@ -15,11 +22,11 @@ def assign_churn_flag(group):
 
         # Mark all earlier stages as 'Not_churn'
         np.where(
-            (group['calendar_date'] < group['notice_date']),
+            (group['calendar_date'] < group['notice_date'].iloc[0]),
             'Not_churn',
 
             # Mark all stages after the churn as 'Null'
-            np.where(group['calendar_date'] > group['notice_date'],
+            np.where(group['calendar_date'] > group['notice_date'].iloc[0],
                      'Null',
                      np.nan)
         )

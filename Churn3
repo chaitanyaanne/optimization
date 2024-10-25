@@ -1,0 +1,36 @@
+# Function to create the churn flag based on tenant life cycle
+def assign_churn_flag(group):
+    # Step 1: Find the first notice_date for the tenant
+    if group['notice_date'].notna().any():
+        # Get the earliest notice_date for the tenant
+        first_notice_date = group['notice_date'].min()
+        
+        # Get the corresponding week of the first notice date
+        first_notice_week = group.loc[group['notice_date'] == first_notice_date, 'calendar_week'].iloc[0]
+        
+        # Step 2: Find the segment at the time of the first notice
+        churn_stage = group.loc[group['notice_date'] == first_notice_date, 'segment'].iloc[0]
+        
+        # Step 3: Determine the number of weeks to mark as 'Churn'
+        if churn_stage == 'live':
+            weeks_to_mark = 4  # Mark the last 4 weeks
+        elif churn_stage == 'long term':
+            weeks_to_mark = 12  # Mark the last 12 weeks
+        else:
+            weeks_to_mark = 0  # No churn marking for other stages
+
+        # Mark as 'Churn' the rows that fall within the last 'weeks_to_mark' weeks before the notice
+        group['churn_flag'] = np.where(
+            (group['calendar_week'] >= first_notice_week - weeks_to_mark) & 
+            (group['calendar_week'] < first_notice_week),
+            'Churn',
+            np.nan
+        )
+        
+        # Discard all rows after the first notice date
+        group = group[group['calendar_date'] <= first_notice_date]
+    else:
+        # If no notice date, no churn flag
+        group['churn_flag'] = np.nan
+
+    return group

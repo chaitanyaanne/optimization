@@ -1,0 +1,16 @@
+from pyspark.sql.functions import udf
+from pyspark.sql.types import MapType, StringType, IntegerType
+
+# Function to modify the nested dictionary
+def update_expirationtime(metadata):
+    if "expirationtime" in metadata:
+        expiration = metadata["expirationtime"]
+        if isinstance(expiration, dict) and "int" in expiration:
+            metadata["expirationtime"] = expiration["int"]  # Replace with the scalar value
+    return metadata
+
+# Define a UDF for transformation
+update_udf = udf(update_expirationtime, MapType(StringType(), MapType(StringType(), IntegerType())))
+
+# Apply the UDF
+df = df.withColumn("metadata", update_udf(df["metadata"]))

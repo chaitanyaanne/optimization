@@ -1,0 +1,46 @@
+from pyspark.sql import SparkSession
+
+# Initialize Spark Session
+spark = SparkSession.builder.appName("FilterSchema").getOrCreate()
+
+# Define the specific schema condition
+def is_matching_schema(schema):
+    """
+    Check if the schema matches the desired format.
+    Example: Expecting a column `expirationtime` of type `StructType`
+    with fields `int` (IntegerType) and `long` (LongType).
+    """
+    try:
+        # Find `expirationtime` field
+        expiration_field = schema["metadata"].dataType["expirationtime"]
+        
+        # Check if it is a StructType with the expected fields
+        if expiration_field.typeName() == "struct":
+            field_names = set([field.name for field in expiration_field.fields])
+            expected_fields = {"int", "long"}
+            return field_names == expected_fields
+        return False
+    except KeyError:
+        return False  # Field not found, doesn't match
+    except AttributeError:
+        return False  # Not a StructType or missing attributes
+
+# Sample files (adjust paths for your S3 bucket)
+file_paths = [
+    "s3://your-bucket-name/file1.json",
+    "s3://your-bucket-name/file2.json"
+]
+
+for file_path in file_paths:
+    try:
+        df = spark.read.json(file_path)
+        schema = df.schema
+        
+        # Check if schema matches the desired format
+        if is_matching_schema(schema):
+            print(f"Schema for {file_path} matches the format:")
+            df.printSchema()
+        else:
+            print(f"Schema for {file_path} does NOT match the format.")
+    except Exception as e:
+        print(f"Error reading file {file_path}: {e}")
